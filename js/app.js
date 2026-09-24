@@ -101,7 +101,7 @@
       installTipHtml() +
       '<div class="hero"><div class="owl">🏛️</div>' +
       "<h1>לומדים יוונית</h1>" +
-      '<p class="sub" style="color:var(--muted)">מסלול A1→C2 · חזרה · שיחה · דקדוק · אוצר מילים רחב</p></div>' +
+      '<p class="sub" style="color:var(--muted)">מסלול A1→C2 · תרגול יומיומי · שיחה · חזרה · דקדוק</p></div>' +
       continueHtml +
       '<div class="card">' +
       "<h2>ההתקדמות שלך</h2>" +
@@ -118,8 +118,8 @@
       " שיעורים הושלמו</p>" +
       '<button type="button" class="btn btn-ghost btn-sm" id="btn-path" style="margin-top:10px;width:100%">פתח מסלול</button>' +
       "</div>" +
-      srsHomeCard() +
       convHomeCard() +
+      srsHomeCard() +
       grammarHomeCard() +
       '<div class="card"><h2>הגדרות</h2>' +
       '<div class="toggle-row"><span>תעתיק (לטינית)</span>' +
@@ -199,12 +199,13 @@
   function convHomeCard() {
     const n = (window.RLConversation && RLConversation.scenarios().length) || 0;
     return (
-      '<div class="card">' +
-      "<h2>שיחה</h2>" +
-      '<p class="sub">תרגול חופשי לפי תרחישים · ' +
+      '<div class="card conv-home-card">' +
+      '<div class="conv-home-badge">תרגול יומיומי</div>' +
+      "<h2>💬 שיחה</h2>" +
+      '<p class="sub">תרחישי חיי יום · הזמנות, נסיעות, בריאות, עבודה ועוד · <strong>' +
       n +
-      " תרחישים</p>" +
-      '<button type="button" class="btn btn-blue" id="btn-conv">פתח שיחה ←</button></div>'
+      "</strong> תרחישים</p>" +
+      '<button type="button" class="btn btn-primary" id="btn-conv">התחל שיחה יומיומית ←</button></div>'
     );
   }
 
@@ -457,34 +458,102 @@
       '<div class="card"><h2>לפי רמה</h2>' +
       rows +
       "</div>" +
-      '<div class="card"><h2>טיפ</h2><p class="sub">שיעור אחד ביום ≈ כ־5 שנים לסיום A1→C2. מסלול צפוף (~1800 שיעורים), יסוד רחב, חזרות ושערי ביקורת — אל תמהרו.</p></div>';
+      '<div class="card"><h2>טיפ</h2><p class="sub">שיעור אחד ביום ≈ כ־6 שנים לסיום A1→C2. מסלול צפוף (~2000 שיעורים), יסוד רחב, חזרות ושערי ביקורת — אל תמהרו.</p></div>';
   }
 
   function renderConversation() {
     showNav(true);
     setActiveNav("conversation");
-    const by = (RLConversation && RLConversation.byLevel()) || {};
+    const all = (RLConversation && RLConversation.scenarios()) || [];
+    const themeLabels = {
+      food: "אוכל",
+      travel: "נסיעות",
+      health: "בריאות",
+      work: "עבודה",
+      shopping: "קניות",
+      social: "חברתי",
+      housing: "דיור",
+      services: "שירותים",
+      emergency: "חירום",
+    };
+    const themes = Array.from(
+      new Set(all.map((s) => s.theme).filter(Boolean))
+    ).sort((a, b) => (themeLabels[a] || a).localeCompare(themeLabels[b] || b, "he"));
+    let activeTheme = window.__convThemeFilter || "all";
+    if (activeTheme !== "all" && themes.indexOf(activeTheme) < 0) activeTheme = "all";
+
+    const filtered =
+      activeTheme === "all" ? all : all.filter((s) => s.theme === activeTheme);
+    const by = {};
+    filtered.forEach((s) => {
+      (by[s.level] || (by[s.level] = [])).push(s);
+    });
     const order = ["A1", "A2", "B1", "B2", "C1", "C2"];
+
+    let chips =
+      '<button type="button" class="theme-chip' +
+      (activeTheme === "all" ? " on" : "") +
+      '" data-theme="all">הכל (' +
+      all.length +
+      ")</button>";
+    themes.forEach((th) => {
+      const count = all.filter((s) => s.theme === th).length;
+      chips +=
+        '<button type="button" class="theme-chip' +
+        (activeTheme === th ? " on" : "") +
+        '" data-theme="' +
+        th +
+        '">' +
+        (themeLabels[th] || th) +
+        " (" +
+        count +
+        ")</button>";
+    });
+
     let html =
       statsBar() +
-      "<h1 style='margin-bottom:8px'>שיחה</h1>" +
-      '<p class="sub" style="color:var(--muted);margin-bottom:12px">בחרו תרחיש — אפשר לבחור תשובה או לכתוב/לדבר חופשי</p>';
+      "<h1 style='margin-bottom:4px'>תרגול יומיומי · שיחה</h1>" +
+      '<p class="sub" style="color:var(--muted);margin-bottom:10px">' +
+      all.length +
+      " תרחישים מעשיים — בחרו תשובה או כתבו/דברו חופשי</p>" +
+      '<div class="theme-filters">' +
+      chips +
+      "</div>";
+
     order.forEach((lv) => {
       const list = by[lv] || [];
       if (!list.length) return;
-      html += '<div class="unit-banner"><div class="unit-num">' + lv + '</div><div class="unit-title">תרחישי ' + lv + "</div></div>";
+      html +=
+        '<div class="unit-banner"><div class="unit-num">' +
+        lv +
+        '</div><div class="unit-title">תרחישי ' +
+        lv +
+        " · " +
+        list.length +
+        "</div></div>";
       list.forEach((sc) => {
+        const th = sc.theme ? themeLabels[sc.theme] || sc.theme : "";
         html +=
           '<button type="button" class="level-card conv-card" data-sid="' +
           sc.id +
           '"><div class="level-info"><strong>' +
           escape(sc.titleHe) +
           "</strong><span>" +
+          (th ? "🏷 " + th + " · " : "") +
           escape(sc.settingHe || sc.titleRu || "") +
           "</span></div></button>";
       });
     });
+    if (!filtered.length) {
+      html += '<div class="card"><p class="sub">אין תרחישים בנושא הזה.</p></div>';
+    }
     appEl.innerHTML = html;
+    appEl.querySelectorAll(".theme-chip").forEach((btn) => {
+      btn.onclick = () => {
+        window.__convThemeFilter = btn.dataset.theme || "all";
+        renderConversation();
+      };
+    });
     appEl.querySelectorAll(".conv-card").forEach((btn) => {
       btn.onclick = () => {
         const sc = RLConversation.scenarios().find((s) => s.id === btn.dataset.sid);
@@ -493,7 +562,7 @@
     });
   }
 
-  function startConversation(scenario) {
+  function startConversation  function startConversation(scenario) {
     showNav(false);
     if (lessonRunner && lessonRunner.destroy) lessonRunner.destroy();
     appEl.innerHTML = '<div id="lesson-root"></div>';

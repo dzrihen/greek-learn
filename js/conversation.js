@@ -20,8 +20,10 @@
   function normalize(s) {
     return String(s || "")
       .toLowerCase()
-      .replace(/ё/g, "е")
-      .replace(/[^\u0400-\u04ff\s]/g, " ")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/ς/g, "σ")
+      .replace(/[^\u0370-\u03ff\u1f00-\u1fff\s]/g, " ")
       .replace(/\s+/g, " ")
       .trim();
   }
