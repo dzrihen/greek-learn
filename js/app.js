@@ -70,10 +70,16 @@
 
   // ——— Screens ———
 
-  function renderHome() {
+  async function renderHome() {
     showNav(true);
     setActiveNav("home");
-    const next = RLCurriculum.nextLesson();
+    const curLv = RLProgress.get().currentLevel || "A1";
+    try {
+      await RLCurriculum.ensureLevel(curLv);
+    } catch (e) {}
+    const next = RLCurriculum.findNextLesson
+      ? await RLCurriculum.findNextLesson()
+      : RLCurriculum.nextLesson();
     const p = RLProgress.get();
     const total = RLCurriculum.totalLessons();
     const done = Object.keys(p.completed).length;
@@ -253,44 +259,48 @@
     });
   }
 
-  function renderLevels() {
+  async function renderLevels() {
     showNav(true);
     setActiveNav("levels");
-    const levels = RLCurriculum.levels;
     let html = statsBar() + "<h1 style='margin-bottom:12px'>רמות CEFR</h1><div class='level-grid'>";
-    levels.forEach((lv, i) => {
-      const ids = RLCurriculum.lessonIdsForLevel(lv.id);
-      const done = RLProgress.countCompleted(ids);
-      const pct = ids.length ? Math.round((done / ids.length) * 100) : 0;
-      const unlocked = i === 0 || RLCurriculum.isLevelUnlocked(lv.id);
+    RLCurriculum.LEVEL_ORDER.forEach((id, i) => {
+      const lv = RLCurriculum.levelMeta ? RLCurriculum.levelMeta(id) : RLCurriculum.getLevel(id) || { id: id, titleHe: id, subtitleHe: "" };
+      const total = RLCurriculum.lessonCountForLevel
+        ? RLCurriculum.lessonCountForLevel(id)
+        : RLCurriculum.lessonIdsForLevel(id).length;
+      const done = RLCurriculum.completedCountForLevel
+        ? RLCurriculum.completedCountForLevel(id)
+        : RLProgress.countCompleted(RLCurriculum.lessonIdsForLevel(id));
+      const pct = total ? Math.round((done / total) * 100) : 0;
+      const unlocked = i === 0 || RLCurriculum.isLevelUnlocked(id);
       html +=
         '<button type="button" class="level-card' +
         (unlocked ? "" : " locked") +
         '" data-level="' +
-        lv.id +
+        id +
         '">' +
         '<div class="level-badge" style="background:' +
-        (LEVEL_COLORS[lv.id] || "#58CC02") +
+        (LEVEL_COLORS[id] || "#58CC02") +
         '">' +
-        lv.id +
+        id +
         "</div>" +
         '<div class="level-info"><strong>' +
         escape(lv.titleHe) +
         "</strong>" +
         "<span>" +
-        escape(lv.subtitleHe) +
+        escape(lv.subtitleHe || "") +
         " · " +
-        ids.length +
+        total +
         " שיעורים</span>" +
         '<div class="progress-track"><div class="progress-fill" style="width:' +
         pct +
         '%;background:' +
-        (LEVEL_COLORS[lv.id] || "#58CC02") +
+        (LEVEL_COLORS[id] || "#58CC02") +
         '"></div></div>' +
         "<span>" +
         done +
         "/" +
-        ids.length +
+        total +
         (unlocked ? "" : " 🔒") +
         "</span>" +
         (unlocked
@@ -313,23 +323,33 @@
     html += "</div>";
     appEl.innerHTML = html;
     appEl.querySelectorAll(".level-card").forEach((btn) => {
-      btn.onclick = () => {
+      btn.onclick = async () => {
         const id = btn.dataset.level;
-        if (!RLCurriculum.isLevelUnlocked(id) && id !== "A1") {
-          // still allow viewing path but gently
-        }
         RLProgress.setLevel(id);
         activeLevel = id;
-        navigate("path");
+        await navigate("path");
       };
     });
   }
 
-  function renderPath() {
+  async function renderPath() {
     showNav(true);
     setActiveNav("path");
     const levelId = activeLevel || RLProgress.get().currentLevel || "A1";
     activeLevel = levelId;
+    if (!RLCurriculum.getLevel(levelId)) {
+      appEl.innerHTML = '<div class="boot">טוען ' + levelId + "…</div>";
+    }
+    try {
+      await RLCurriculum.ensureLevel(levelId);
+    } catch (e) {
+      appEl.innerHTML =
+        '<div class="boot"><p>טעינת ' +
+        levelId +
+        ' נכשלה</p><button type="button" class="btn btn-primary" id="lvl-retry">נסה שוב</button></div>';
+      qs("#lvl-retry").onclick = () => renderPath();
+      return;
+    }
     const level = RLCurriculum.getLevel(levelId);
     if (!level) {
       appEl.innerHTML = "<p>רמה לא נמצאה</p>";
@@ -416,21 +436,25 @@
     const pct = total ? Math.round((done / total) * 100) : 0;
 
     let rows = "";
-    RLCurriculum.levels.forEach((lv) => {
-      const ids = RLCurriculum.lessonIdsForLevel(lv.id);
-      const d = RLProgress.countCompleted(ids);
-      const lp = ids.length ? Math.round((d / ids.length) * 100) : 0;
+    RLCurriculum.LEVEL_ORDER.forEach((id) => {
+      const total = RLCurriculum.lessonCountForLevel
+        ? RLCurriculum.lessonCountForLevel(id)
+        : RLCurriculum.lessonIdsForLevel(id).length;
+      const d = RLCurriculum.completedCountForLevel
+        ? RLCurriculum.completedCountForLevel(id)
+        : RLProgress.countCompleted(RLCurriculum.lessonIdsForLevel(id));
+      const lp = total ? Math.round((d / total) * 100) : 0;
       rows +=
         '<div class="level-prog-row"><span class="tag">' +
-        lv.id +
+        id +
         '</span><div style="flex:1"><div class="progress-track"><div class="progress-fill" style="width:' +
         lp +
         "%;background:" +
-        (LEVEL_COLORS[lv.id] || "#58CC02") +
+        (LEVEL_COLORS[id] || "#58CC02") +
         '"></div></div></div><span style="font-size:0.8rem;color:var(--muted)">' +
         d +
         "/" +
-        ids.length +
+        total +
         "</span></div>";
     });
 
@@ -562,7 +586,7 @@
     });
   }
 
-  function startConversation  function startConversation(scenario) {
+  function startConversation(scenario) {
     showNav(false);
     if (lessonRunner && lessonRunner.destroy) lessonRunner.destroy();
     appEl.innerHTML = '<div id="lesson-root"></div>';
@@ -654,8 +678,23 @@
     });
   }
 
-    function startLesson(lessonId) {
-    const lesson = RLCurriculum.getLesson(lessonId);
+  async function startLesson(lessonId) {
+    let lesson = RLCurriculum.getLesson(lessonId);
+    if (!lesson) {
+      const m = String(lessonId || "").match(/^(a1|a2|b1|b2|c1|c2)/i);
+      if (m) {
+        appEl.innerHTML = '<div class="boot">טוען ' + m[1].toUpperCase() + "…</div>";
+        try {
+          await RLCurriculum.ensureLevel(m[1].toUpperCase());
+        } catch (e) {
+          appEl.innerHTML =
+            '<div class="boot"><p>טעינה נכשלה</p><button type="button" class="btn btn-primary" id="les-retry">נסה שוב</button></div>';
+          qs("#les-retry").onclick = () => startLesson(lessonId);
+          return;
+        }
+        lesson = RLCurriculum.getLesson(lessonId);
+      }
+    }
     if (!lesson) return;
     showNav(false);
     if (lessonRunner && lessonRunner.destroy) lessonRunner.destroy();
@@ -708,7 +747,7 @@
 
     qs("#btn-to-path").onclick = () =>
       navigate(lesson.level === "GRAM" ? "grammar" : "path");
-    qs("#btn-next-les").onclick = () => {
+    qs("#btn-next-les").onclick = async () => {
       if (lesson.level === "GRAM") {
         const ids = RLCurriculum.grammarLessonIds();
         const idx = ids.indexOf(lesson.id);
@@ -717,8 +756,10 @@
         else navigate("grammar");
         return;
       }
-      const next = RLCurriculum.nextLesson();
-      if (next) startLesson(next.id);
+      const nxt = RLCurriculum.findNextLesson
+        ? await RLCurriculum.findNextLesson()
+        : RLCurriculum.nextLesson();
+      if (nxt) startLesson(nxt.id);
       else navigate("home");
     };
   }
@@ -731,11 +772,11 @@
       .replace(/"/g, "&quot;");
   }
 
-  function navigate(name) {
+  async function navigate(name) {
     route = name;
-    if (name === "home") renderHome();
-    else if (name === "path") renderPath();
-    else if (name === "levels") renderLevels();
+    if (name === "home") await renderHome();
+    else if (name === "path") await renderPath();
+    else if (name === "levels") await renderLevels();
     else if (name === "progress") renderProgress();
     else if (name === "conversation") renderConversation();
     else if (name === "grammar") renderGrammar();
@@ -745,16 +786,8 @@
     btn.onclick = () => navigate(btn.dataset.route);
   });
 
-  // Boot: wait for curriculum (may lazy-load)
-  function boot() {
-    if (!globalReady()) {
-      appEl.innerHTML = '<div class="boot">טוען תוכן לימודי…</div>';
-      setTimeout(boot, 50);
-      return;
-    }
-    activeLevel = RLProgress.get().currentLevel || "A1";
-    navigate("home");
-  }
+  // Boot: wait for A1 only (lazy-load other levels on demand)
+  const BOOT_TIMEOUT_MS = 45000;
 
   function globalReady() {
     return (
@@ -763,8 +796,47 @@
       window.RLEngine &&
       window.RLSpeech &&
       window.RLSrs &&
-      RLCurriculum.ready
+      !!RLCurriculum.getLevel("A1")
     );
+  }
+
+  async function boot() {
+    appEl.innerHTML = '<div class="boot">טוען A1…</div>';
+    if (!window.RLCurriculum || !RLCurriculum.ensureLevel) {
+      appEl.innerHTML =
+        '<div class="boot"><p>שגיאה: curriculum לא נטען</p>' +
+        '<button type="button" class="btn btn-primary" id="boot-retry">נסה שוב</button></div>';
+      qs("#boot-retry").onclick = () => boot();
+      return;
+    }
+    try {
+      const load = (async () => {
+        await RLCurriculum.ensureLevel("A1");
+        if (RLCurriculum._collect) RLCurriculum._collect();
+        if (!RLCurriculum.getLevel("A1")) throw new Error("A1 לא מוכן");
+      })();
+      await Promise.race([
+        load,
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("timeout")), BOOT_TIMEOUT_MS)
+        ),
+      ]);
+      activeLevel = RLProgress.get().currentLevel || "A1";
+      await navigate("home");
+    } catch (e) {
+      const msg =
+        e && e.message === "timeout"
+          ? "הטעינה ארכה יותר מדי (45 שניות)."
+          : "טעינת A1 נכשלה.";
+      const detail = e && e.message && e.message !== "timeout" ? String(e.message) : "";
+      appEl.innerHTML =
+        '<div class="boot"><p>' +
+        msg +
+        "</p>" +
+        (detail ? '<p class="sub" style="color:var(--muted)">' + escape(detail) + "</p>" : "") +
+        '<button type="button" class="btn btn-primary" id="boot-retry">נסה שוב</button></div>';
+      qs("#boot-retry").onclick = () => boot();
+    }
   }
 
   boot();

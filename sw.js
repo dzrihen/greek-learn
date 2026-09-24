@@ -1,5 +1,5 @@
-/* Greek Learn v8 — SRS, conversation, grammar, cached audio */
-const CACHE_NAME = "greek-learn-v8";
+/* Greek Learn v9 — shell-only precache; level parts + audio on demand */
+const CACHE_NAME = "greek-learn-v9";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -16,18 +16,6 @@ const APP_SHELL = [
   "./data/curriculum.js",
   "./data/conversations.js",
   "./data/grammar.js",
-  "./data/a1-part1.js",
-  "./data/a1-part2.js",
-  "./data/a2-part1.js",
-  "./data/a2-part2.js",
-  "./data/b1-part1.js",
-  "./data/b1-part2.js",
-  "./data/b2-part1.js",
-  "./data/b2-part2.js",
-  "./data/c1-part1.js",
-  "./data/c1-part2.js",
-  "./data/c2-part1.js",
-  "./data/c2-part2.js",
   "./audio/manifest.json",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
@@ -82,6 +70,7 @@ self.addEventListener("fetch", (event) => {
 
 function isCacheable(pathname) {
   const p = pathname.replace(/\/+$/, "") || "/";
+  // Runtime cache-on-demand: level part JS + audio + shell assets
   return (
     p.endsWith("/index.html") ||
     p.endsWith("/manifest.webmanifest") ||
@@ -90,6 +79,7 @@ function isCacheable(pathname) {
     p.includes("/css/") ||
     p.includes("/js/") ||
     p.includes("/data/") ||
-    p.includes("/audio/")
+    p.includes("/audio/") ||
+    /\/data\/[abc]\d-part\d\.js$/.test(p)
   );
 }
