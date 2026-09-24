@@ -12,7 +12,7 @@ from vocab_all import load_bank
 from vocab_bank import LemmaTracker, generate_lemma_sentences, natural_rows_for_lemma
 
 OUT = os.path.join(os.path.dirname(__file__), "..", "data")
-CHECKPOINT_EVERY = 8
+CHECKPOINT_EVERY = 10
 
 ALPHABET = [
     ("Α","אלפא","Αθήνα","אתונה"),("Β","ויטה","Βιβλίο","ספר"),("Γ","גמא","Γάλα","חלב"),
@@ -53,7 +53,7 @@ def curated_plus_vocab(tracker, curated, cefr, theme, target_rows):
     rng.shuffle(tail)
     return head + tail
 
-def build_unit(level, uid, title_he, title_ru, rows, tip=None, per=6, every_cp=CHECKPOINT_EVERY):
+def build_unit(level, uid, title_he, title_ru, rows, tip=None, per=12, every_cp=CHECKPOINT_EVERY):
     specs = chunk_lessons(title_he, title_ru, rows, per=per, tip=tip)
     specs = with_checkpoint(specs, every=every_cp, pool_phrases=rows, unit_label=title_he[:12])
     idx = int(uid.split("u")[1])
@@ -358,31 +358,63 @@ def expand_level(level_id, title_he, subtitle_he, tracker, min_lessons):
     def count_lessons(us):
         return sum(len(u["lessons"]) for u in us)
 
+    # Dense vocab units: pack many new lemmas per lesson; stop near target (±8%).
+    target = min_lessons
+    max_lessons = int(target * 1.08)
+    min_floor = int(target * 0.92)
     extra_i = 1
-    max_extra = {"A1": 50, "A2": 55, "B1": 95, "B2": 120, "C1": 110, "C2": 100}.get(level_id, 50)
+    max_extra = 90
     while extra_i <= max_extra:
-        below_min = count_lessons(units) < min_lessons
-        unused = tracker.pick(80, cefr=cefr)
-        if len(unused) < 12:
-            unused = tracker.sample_band(80, cefr=cefr) or tracker.sample_band(80)
-        if not below_min:
-            band_unused = [x for x in tracker.bank if x["cefr"] in cefr and x["lemma"].lower() not in tracker.introduced]
-            if len(band_unused) < 20:
-                break
-            unused = band_unused[:80]
-        if len(unused) < 6:
+        n = count_lessons(units)
+        unused = tracker.pick(110, cefr=cefr)
+        if len(unused) < 10:
+            unused = [x for x in tracker.bank
+                      if x.get("cefr") in cefr and x["lemma"].lower() not in tracker.introduced][:110]
+        truly_new = len(unused) >= 8
+        if n >= target:
             break
+        if n >= max_lessons:
+            break
+        if not truly_new:
+            unused = tracker.sample_band(110, cefr=cefr) or tracker.sample_band(110)
+            if len(unused) < 8:
+                break
         rows = []
-        start = (extra_i * 17) % max(1, len(unused))
+        start = (extra_i * 19) % max(1, len(unused))
         ordered = unused[start:] + unused[:start]
         for u in ordered:
-            for ru, he in natural_rows_for_lemma(u):
+            # one natural frame per lemma → maximize unique lemmas per lesson
+            for ru, he in natural_rows_for_lemma(u)[:1]:
                 rows.append((ru, he))
                 tracker.mark_text(ru)
             tracker.mark_text(u["lemma"])
+            if len(rows) >= 96:
+                break
+        if len(rows) < 8:
+            break
         uid = f"{level_id.lower()}-u{90+extra_i:02d}"
-        tip = "מילים חדשות מהמאגר — ניסוח טבעי" if below_min else "חזרה מגוונת על אוצר המילים"
-        units.append(build_unit(level_id, uid, f"אוצר מילים {extra_i}", f"Λεξιλόγιο {extra_i}", rows[:56], tip=tip))
+        tip = "מילים חדשות מהמאגר — שיעור צפוף" if truly_new else "חזרה מגוונת על אוצר המילים"
+        units.append(build_unit(level_id, uid, f"אוצר מילים {extra_i}", f"Λεξιλόγιο {extra_i}", rows, tip=tip, per=14))
+        extra_i += 1
+
+        # If still short of floor after unused exhausted, continue recycling briefly
+        if count_lessons(units) < min_floor and extra_i > max_extra - 20:
+            pass
+
+    # Pad to min_floor with recycled band frames if still short
+    while count_lessons(units) < target and extra_i <= max_extra + 40:
+        unused = tracker.sample_band(96, cefr=cefr) or tracker.sample_band(96)
+        if len(unused) < 8:
+            break
+        rows = []
+        for u in unused:
+            for ru, he in natural_rows_for_lemma(u)[:1]:
+                rows.append((ru, he))
+                tracker.mark_text(ru)
+            if len(rows) >= 84:
+                break
+        uid = f"{level_id.lower()}-u{90+extra_i:02d}"
+        units.append(build_unit(level_id, uid, f"אוצר מילים {extra_i}", f"Λεξιλόγιο {extra_i}", rows, tip="חיזוק אוצר מילים", per=14))
         extra_i += 1
 
     return {"id": level_id, "titleHe": title_he, "subtitleHe": subtitle_he, "units": units}
@@ -411,13 +443,14 @@ def main():
     os.makedirs(OUT, exist_ok=True)
     tracker = LemmaTracker(load_bank())
     print("Bank lemmas:", tracker.stats()["bank_size"])
+    # ~1800 main-path lessons (±10%): ~5 years × 1 lesson/day
     targets = {
-        "A1": (980, "מתחילים", "אלפבית עד משפטים יומיומיים — יסוד רחב"),
-        "A2": (920, "יסודי מתקדם", "עבר, עתיד, השוואות, חיי יום"),
-        "B1": (920, "בינוני", "דעות, נרטיב, אוצר מילים רחב"),
-        "B2": (1350, "בינוני־גבוה", "טיעונים, מדיה, מופשט, אוצר מתקדם"),
-        "C1": (1250, "מתקדם", "סגנון, ניואנס, רגיסטר, אקדמי"),
-        "C2": (1100, "שליטה גבוהה", "שיח כמעט ילידי, תרבות גבוהה"),
+        "A1": (320, "מתחילים", "אלפבית עד משפטים יומיומיים — יסוד רחב"),
+        "A2": (300, "יסודי מתקדם", "עבר, עתיד, השוואות, חיי יום"),
+        "B1": (320, "בינוני", "דעות, נרטיב, אוצר מילים רחב"),
+        "B2": (320, "בינוני־גבוה", "טיעונים, מדיה, מופשט, אוצר מתקדם"),
+        "C1": (280, "מתקדם", "סגנון, ניואנס, רגיסטר, אקדמי"),
+        "C2": (260, "שליטה גבוהה", "שיח כמעט ילידי, תרבות גבוהה"),
     }
     files_map = {}
     counts = {}

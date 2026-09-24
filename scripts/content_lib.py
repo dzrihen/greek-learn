@@ -7,13 +7,14 @@ def dlg(*pairs, distractors=None):
         turns.append({"speaker": "npc" if sp == "n" else "user", "ru": ru})
     return dialogue(turns, distractors or ["Δεν ξέρω", "Επαναλάβετε", "Πού είναι;"])
 
-def chunk_lessons(title_base_he, title_base_ru, all_phrase_rows, per=6, biases=None, tip=None, dialogues=None):
+def chunk_lessons(title_base_he, title_base_ru, all_phrase_rows, per=12, biases=None, tip=None, dialogues=None):
+    """Split phrases into denser lessons (little overlap) for ~1800-path pacing."""
     biases = biases or ["listen", "balanced", "speak", "build", "balanced"]
     specs = []
     i = 0
     lesson_i = 0
     n = len(all_phrase_rows)
-    step = max(3, per - 2)
+    step = max(per, 8)  # no overlap — denser unique content per lesson
     while i < n:
         chunk = all_phrase_rows[i:i + per]
         if len(chunk) < 4 and lesson_i > 0:
@@ -40,11 +41,11 @@ def chunk_lessons(title_base_he, title_base_ru, all_phrase_rows, per=6, biases=N
         specs.append((th, tr, ph, tip, dlg, bias, False))
         lesson_i += 1
         i += step
-        if lesson_i > 40:
+        if lesson_i > 80:
             break
     return specs
 
-def with_checkpoint(specs, every=8, pool_phrases=None, unit_label="חזרה"):
+def with_checkpoint(specs, every=10, pool_phrases=None, unit_label="חזרה"):
     out = []
     buf = []
     count = 0

@@ -1,5 +1,5 @@
-/* Greek Learn v6 — SRS, conversation, grammar, cached audio */
-const CACHE_NAME = "greek-learn-v6";
+/* Greek Learn v7 — SRS, conversation, grammar, cached audio */
+const CACHE_NAME = "greek-learn-v7";
 const APP_SHELL = [
   "./",
   "./index.html",
