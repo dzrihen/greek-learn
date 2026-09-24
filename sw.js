@@ -1,5 +1,5 @@
-/* Greek Learn v9 — shell-only precache; level parts + audio on demand */
-const CACHE_NAME = "greek-learn-v9";
+/* Greek Learn v10 — shell-only precache; level parts + audio on demand */
+const CACHE_NAME = "greek-learn-v10";
 const APP_SHELL = [
   "./",
   "./index.html",

@@ -17,7 +17,7 @@
 </head>
 <body>
   <div id="app" class="app">
-    <div class="boot">טוען את מסלול הלימוד…</div>
+    <div class="boot">טוען A1…</div>
   </div>
 
   <nav id="bottom-nav" class="bottom-nav hidden" aria-label="ניווט ראשי">
@@ -52,7 +52,7 @@
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./sw.js").catch(() => {});
+        navigator.serviceWorker.register("./sw.js?v=10").catch(() => {});
       });
     }
   </script>
