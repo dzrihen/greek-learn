@@ -44,6 +44,7 @@ body {
 input, select, textarea, button { font-size: 16px; font-family: inherit; }
 button { cursor: pointer; border: none; background: none; color: inherit; }
 .ru { font-family: var(--ru); direction: ltr; unicode-bidi: isolate; text-align: left; }
+.target-text { unicode-bidi: isolate; }
 .hidden { display: none !important; }
 
 .app {
@@ -429,6 +430,7 @@ button { cursor: pointer; border: none; background: none; color: inherit; }
 .tts-btn .ru-text {
   font-family: var(--ru);
   direction: ltr;
+  unicode-bidi: isolate;
   font-size: 1.15rem;
 }
 .ru-big {
@@ -467,6 +469,8 @@ button { cursor: pointer; border: none; background: none; color: inherit; }
 
 /* Chips / word bank */
 .chip-bank, .chip-answer {
+  direction: ltr;
+  unicode-bidi: isolate;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
