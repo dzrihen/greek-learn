@@ -1,5 +1,5 @@
 /* Greek Learn v12 — network-first shell; progress lives in localStorage + cloud sync (not SW caches) */
-const CACHE_NAME = "greek-learn-v13";
+const CACHE_NAME = "greek-learn-v14";
 const APP_SHELL = [
   "./",
   "./index.html",
