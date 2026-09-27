@@ -439,6 +439,7 @@
           c.type = "button";
           if (!used) {
             c.onclick = () => {
+              RLSpeech.speak(item.w);
               picked.push(item);
               sync();
               rebuildBank();
@@ -474,6 +475,10 @@
     function renderSentenceBuild(card, ex) {
       card.appendChild(el("div", "ex-prompt", ex.promptHe || "בנה את המשפט ביוונית"));
       if (ex.he && ex.he !== ex.promptHe) card.appendChild(el("div", "he-prompt", escapeHtml(ex.he)));
+      if (ex.ru) {
+        card.appendChild(ttsButton(ex.ru, false));
+        scheduleAutoPlay(ex.ru);
+      }
       const words = ex.words || [];
       const distractors = ex.distractors || [];
       const answer = markTarget(el("div", "chip-answer"));
@@ -502,6 +507,7 @@
           c.type = "button";
           if (!used) {
             c.onclick = () => {
+              RLSpeech.speak(item.w);
               picked.push(item);
               sync();
               rebuildBank();
@@ -681,10 +687,10 @@
         b.type = "button";
         b.onclick = () => {
           if (busy) return;
+          RLSpeech.speak(label);
           if (ok || label === ex.answer) {
             b.classList.add("correct");
             const full = (ex.sentence || "").replace("___", ex.answer || label);
-            RLSpeech.speak(full);
             succeed(targetText(full));
           } else {
             b.classList.add("wrong");
@@ -717,6 +723,7 @@
         b.dataset.side = item.side;
         b.onclick = () => {
           if (busy || b.classList.contains("matched")) return;
+          if (item.side === "ru") RLSpeech.speak(item.text);
           if (!selected) {
             selected = b;
             b.classList.add("selected");
