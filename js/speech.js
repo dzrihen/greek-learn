@@ -8,6 +8,7 @@
   let audioManifest = null; // { hash: "audio/....mp3" }
   let manifestPromise = null;
   let currentAudio = null;
+  let playGen = 0; // bumps on every new request / stop → stale continuations abort
 
   function markGesture() {
     userGesture = true;
@@ -97,10 +98,11 @@
     }
   }
 
-  function playFile(url, rate) {
+  function playFile(url, rate, gen) {
     return new Promise((resolve) => {
       try {
-        stop();
+        if (gen != null && gen !== playGen) return resolve({ ok: false, source: "file", cancelled: true });
+        haltOutput();
         const a = new Audio(url);
         currentAudio = a;
         a.playbackRate = rate != null ? rate : learnerRate();
@@ -108,8 +110,12 @@
         const done = (ok) => {
           if (settled) return;
           settled = true;
+          if (!ok) {
+            // make sure a late-loading clip can never start after we fall back to TTS
+            try { a.onended = null; a.onerror = null; a.oncanplay = null; a.pause(); a.removeAttribute("src"); a.load(); } catch (e) {}
+          }
           if (currentAudio === a) currentAudio = null;
-          resolve({ ok: !!ok, source: "file" });
+          resolve({ ok: !!ok, source: "file", cancelled: gen != null && gen !== playGen });
         };
         a.onended = () => done(true);
         a.onerror = () => done(false);
@@ -117,22 +123,24 @@
         if (p && p.then) {
           p.catch(() => done(false));
         }
+        // Slow mobile networks: give the clip time to load before giving up.
         setTimeout(() => {
-          if (!settled && a.paused) done(false);
-        }, 900);
+          if (!settled && a.paused && (a.error || a.readyState < 2)) done(false);
+        }, 6000);
       } catch (e) {
         resolve({ ok: false, source: "file" });
       }
     });
   }
 
-  function speakTts(text, opts) {
+  function speakTts(text, opts, gen) {
     if (!text || typeof speechSynthesis === "undefined") {
       return Promise.resolve({ ok: false, source: "tts" });
     }
     opts = opts || {};
     return new Promise((resolve) => {
       try {
+        if (gen != null && gen !== playGen) return resolve({ ok: false, source: "tts", cancelled: true });
         speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(String(text));
         u.lang = "el-GR";
@@ -167,8 +175,11 @@
     const rate = opts.rate != null ? opts.rate : learnerRate();
     const hash = textHash(text);
     const idKey = opts.audioId || null;
+    const gen = ++playGen;
+    haltOutput();
 
     return loadManifest().then((man) => {
+      if (gen !== playGen) return { ok: false, cancelled: true };
       const path =
         (idKey && man[idKey]) ||
         man[hash] ||
@@ -178,12 +189,13 @@
         const url = path.startsWith("http") || path.startsWith("./") || path.startsWith("/")
           ? path
           : "./" + path;
-        return playFile(url, rate).then((r) => {
+        return playFile(url, rate, gen).then((r) => {
           if (r && r.ok) return r;
-          return speakTts(text, opts);
+          if (gen !== playGen || (r && r.cancelled)) return { ok: false, cancelled: true };
+          return speakTts(text, opts, gen);
         });
       }
-      return speakTts(text, opts);
+      return speakTts(text, opts, gen);
     });
   }
 
@@ -198,7 +210,22 @@
     }));
   }
 
+  function haltOutput() {
+    try {
+      if (currentAudio) {
+        currentAudio.onended = null;
+        currentAudio.onerror = null;
+        currentAudio.pause();
+        currentAudio = null;
+      }
+    } catch (e) {}
+    try {
+      if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel();
+    } catch (e) {}
+  }
+
   function stop() {
+    playGen++;
     try {
       if (currentAudio) {
         currentAudio.pause();
@@ -214,12 +241,19 @@
     return new Promise((r) => setTimeout(r, ms));
   }
 
+  function seqStale(r) {
+    return !!(r && r.cancelled);
+  }
+
   async function speakTurns(texts, gapMs, opts) {
     const list = (texts || []).map((t) => String(t || "").trim()).filter(Boolean);
     const gap = gapMs == null ? 420 : gapMs;
     for (let i = 0; i < list.length; i++) {
-      await speak(list[i], opts);
+      const r = await speak(list[i], opts);
+      if (r && r.cancelled) return; // something else started playing → abandon the sequence
+      const g = playGen;
       if (i < list.length - 1 && gap > 0) await sleep(gap);
+      if (playGen !== g) return;
     }
   }
 
@@ -295,6 +329,7 @@
 
   global.RLSpeech = {
     speak,
+    speakSlow: (t, o) => speak(t, Object.assign({}, o, { rate: 0.65 })),
     autoPlay,
     speakTurns,
     stop,
@@ -309,4 +344,44 @@
     hasUserGesture: () => userGesture,
     getRate: learnerRate,
   };
+
+  /* Central audio guard: identical play requests within 600ms are collapsed into one
+     (protects against autoplay + tap / double render / double listeners). Each new
+     distinct request already cancels the previous clip + TTS inside speak(). */
+  (function () {
+    const S = global.RLSpeech;
+    if (!S || S.__guarded) return;
+    S.__guarded = true;
+    const DEDUPE_MS = 600;
+    let last = { key: "", t: 0, p: null };
+    const stats = (global.__RL_AUDIO_STATS = global.__RL_AUDIO_STATS || { requests: 0, deduped: 0 });
+    function guard(kind, text, run) {
+      const key = kind + "|" + (Array.isArray(text) ? text.join("\u0001") : String(text || "").trim());
+      const now = Date.now();
+      stats.requests++;
+      if (last.p && last.key === key && now - last.t < DEDUPE_MS) {
+        stats.deduped++;
+        return last.p;
+      }
+      const p = Promise.resolve(run());
+      last = { key: key, t: now, p: p };
+      return p;
+    }
+    const raw = { speak: S.speak, autoPlay: S.autoPlay, speakSlow: S.speakSlow, speakTurns: S.speakTurns, stop: S.stop };
+    S.speak = function (text, opts) {
+      const k = "n" + (opts && opts.rate != null ? ":" + opts.rate : "") + (opts && opts.audioId ? ":" + opts.audioId : "");
+      return guard(k, text, () => raw.speak(text, opts));
+    };
+    S.autoPlay = function (text, opts) {
+      // shares the "n" key with speak(): autoplay + immediate replay tap = one playback
+      const k = "n" + (opts && opts.rate != null ? ":" + opts.rate : "");
+      let viaAuto = false;
+      const p = guard(k, text, () => { viaAuto = true; return raw.autoPlay(text, opts); });
+      if (viaAuto) return p;
+      return p.then((r) => (r && "blocked" in r ? r : { ok: !!(r && r.ok), blocked: false, source: r && r.source }));
+    };
+    if (raw.speakSlow) S.speakSlow = function (text, opts) { return guard("slow", text, () => raw.speakSlow(text, opts)); };
+    S.speakTurns = function (texts, gap, opts) { return guard("turns", texts, () => raw.speakTurns(texts, gap, opts)); };
+    S.stop = function () { last = { key: "", t: 0, p: null }; return raw.stop(); };
+  })();
 })(window);
