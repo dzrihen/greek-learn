@@ -223,9 +223,9 @@ def main():
             unit_ru, unit_he = set(), set()
             for li, les in enumerate(unit["lessons"]):
                 for e in les["exercises"]:
-                    rows = ex_rows(e)
                     if e.get("type") == "dialogue":
-                        rows = rows + [(d, None) for d in e.get("distractors") or []]
+                        continue  # dialogues come from the coherent bank (data/dialogues.js); never swap random lines in
+                    rows = ex_rows(e)
                     for ru, he in rows:
                         if not ru:
                             continue
